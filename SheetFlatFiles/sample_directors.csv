@@ -1,0 +1,6 @@
+CellValue_English,CellFormula_English,CellValue_Afrikaans,CellFormula_Afrikaans
+The directors are responsible for the preparation and fair presentation of the financial statements.,"=""The directors are responsible for the preparation and fair presentation of the ""&LOWER(GroupAFSPrefix)&""financial statements.""",,
+These financial statements have been prepared in accordance with International Financial Reporting Standards.,"=""These ""&LOWER(GroupAFSPrefix)&""financial statements have been prepared in accordance with International Financial Reporting Standards.""",,
+The company's principal activities are the provision of financial services.,"=""The ""&GroupEntityCase&"" principal activities are the provision of financial services.""",,
+Revenue is recognised when the performance obligation is satisfied.,"=""Revenue is recognised when the performance obligation is satisfied.""",,
+"The carrying amount of property, plant and equipment is reviewed annually.","=""The carrying amount of property, plant and equipment is reviewed annually.""",,
