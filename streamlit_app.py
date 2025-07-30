@@ -18,6 +18,8 @@ from plotly.subplots import make_subplots
 # Import our existing modules
 from csv_reader import CSVReader
 from test_prompts import translate_english_value, translate_formula
+from configurable_translator import ConfigurableTranslator
+from prompt_config import PromptConfigManager, PromptConfiguration, TranslationPrompt, FormulaPrompt
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -174,6 +176,10 @@ class StreamlitTranslator:
         self.session_state = st.session_state
         self.target_language = target_language.capitalize()
         
+        # Initialize configurable translator and config manager
+        self.config_manager = PromptConfigManager()
+        self.configurable_translator = ConfigurableTranslator(self.config_manager)
+        
         # Initialize session state variables
         if 'current_df' not in self.session_state:
             self.session_state.current_df = None
@@ -197,6 +203,8 @@ class StreamlitTranslator:
             self.session_state.current_translated_value = ""
         if 'current_translated_formula' not in self.session_state:
             self.session_state.current_translated_formula = ""
+        if 'prompt_config' not in self.session_state:
+            self.session_state.prompt_config = self.config_manager.load_configuration()
     
     def load_named_ranges_doc(self) -> str:
         """Load the DraftworxNamedRanges.md file"""
@@ -254,7 +262,9 @@ class StreamlitTranslator:
         
         try:
             with st.spinner("🔄 Translating text..."):
-                translation = translate_english_value(english_text, self.target_language)
+                # Reload configuration to ensure we're using the latest
+                self.configurable_translator.reload_configuration()
+                translation = self.configurable_translator.translate_english_value(english_text, self.target_language)
                 return translation.strip()
         except Exception as e:
             st.error(f"Error translating text: {e}")
@@ -267,7 +277,9 @@ class StreamlitTranslator:
         
         try:
             with st.spinner("🔄 Generating formula..."):
-                formula = translate_formula(english_value, translated_value, english_formula, self.target_language)
+                # Reload configuration to ensure we're using the latest
+                self.configurable_translator.reload_configuration()
+                formula = self.configurable_translator.translate_formula(english_value, translated_value, english_formula, self.target_language)
                 
                 # Ensure formula starts with apostrophe
                 if not formula.startswith("'"):
@@ -583,7 +595,7 @@ def main():
     auto_save = st.sidebar.checkbox("Auto-save progress", value=True)
     
     # Main content area
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🔄 Processing", "📈 Analytics", "📋 History"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "🔄 Processing", "📈 Analytics", "📋 History", "⚙️ Configuration"])
     
     with tab1:
         st.markdown("## 📊 Translation Dashboard")
@@ -798,6 +810,279 @@ def main():
                         st.rerun()
         else:
             st.info("No backup files found")
+    
+    with tab5:
+        st.markdown("## ⚙️ Prompt Configuration")
+        st.markdown("Configure the AI prompts used for translation and formula generation.")
+        
+        # Load current configuration
+        config = translator.config_manager.load_configuration()
+        
+        # Configuration management
+        st.markdown("### 📁 Configuration Management")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Preset management
+            st.markdown("#### 📋 Presets")
+            available_presets = translator.config_manager.get_available_presets()
+            
+            if available_presets:
+                selected_preset = st.selectbox("Load Preset:", ["Current"] + available_presets)
+                
+                if selected_preset != "Current" and st.button("Load Preset"):
+                    config = translator.config_manager.load_preset(selected_preset)
+                    translator.config_manager.save_configuration(config)
+                    st.success(f"Loaded preset: {selected_preset}")
+                    st.rerun()
+            else:
+                st.info("No presets saved yet")
+        
+        with col2:
+            # Save preset
+            st.markdown("#### 💾 Save as Preset")
+            preset_name = st.text_input("Preset Name:")
+            if preset_name and st.button("Save Preset"):
+                if translator.config_manager.save_preset(config, preset_name):
+                    st.success(f"Saved preset: {preset_name}")
+                else:
+                    st.error("Failed to save preset")
+        
+        with col3:
+            # Import/Export
+            st.markdown("#### 📤 Import/Export")
+            if st.button("Export Configuration"):
+                export_path = f"prompt_configs/export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                if translator.config_manager.export_configuration(config, export_path):
+                    st.success(f"Configuration exported to: {export_path}")
+                else:
+                    st.error("Failed to export configuration")
+        
+        # Configuration Info
+        st.markdown("### ℹ️ Current Configuration")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.info(f"**Name:** {config.name}")
+            st.info(f"**Created:** {config.created_at}")
+        
+        with col2:
+            st.info(f"**Modified:** {config.modified_at}")
+            if config.description:
+                st.info(f"**Description:** {config.description}")
+        
+        # Configuration Editor
+        st.markdown("### ✏️ Edit Configuration")
+        
+        # Basic configuration details
+        with st.expander("📝 Basic Configuration Details", expanded=True):
+            new_name = st.text_input("Configuration Name:", value=config.name)
+            new_description = st.text_area("Description:", value=config.description, height=100)
+        
+        # Translation prompt configuration
+        with st.expander("🌍 Translation Prompt Configuration", expanded=False):
+            st.markdown("#### AI Identity for Text Translation")
+            translation_identity = st.text_area(
+                "Identity:", 
+                value=config.translation_prompt.identity,
+                height=100,
+                help="Define who the AI is for translation tasks"
+            )
+            
+            st.markdown("#### Translation Instructions")
+            translation_instructions = st.text_area(
+                "Instructions:", 
+                value=config.translation_prompt.instructions,
+                height=200,
+                help="Detailed instructions for text translation. Use {target_language} placeholder for dynamic language insertion."
+            )
+            
+            st.markdown("#### Translation Examples (Optional)")
+            translation_examples = st.text_area(
+                "Examples:", 
+                value=config.translation_prompt.examples,
+                height=150,
+                help="Provide examples of good translations"
+            )
+            
+            st.markdown("#### Critical Rules for Translation (Optional)")
+            translation_rules = st.text_area(
+                "Critical Rules:", 
+                value=config.translation_prompt.critical_rules,
+                height=100,
+                help="Important rules that must be followed"
+            )
+            
+            st.markdown("#### Additional Notes (Optional)")
+            translation_notes = st.text_area(
+                "Additional Notes:", 
+                value=config.translation_prompt.additional_notes,
+                height=100,
+                help="Any additional guidance for the AI"
+            )
+        
+        # Formula prompt configuration
+        with st.expander("📊 Formula Translation Prompt Configuration", expanded=False):
+            st.markdown("#### AI Identity for Formula Translation")
+            formula_identity = st.text_area(
+                "Identity:", 
+                value=config.formula_prompt.identity,
+                height=100,
+                help="Define who the AI is for formula translation tasks",
+                key="formula_identity"
+            )
+            
+            st.markdown("#### Critical Rules for Formula Translation")
+            formula_rules = st.text_area(
+                "Critical Rules:", 
+                value=config.formula_prompt.critical_rules,
+                height=200,
+                help="Essential rules for formula translation - what NOT to translate",
+                key="formula_rules"
+            )
+            
+            st.markdown("#### Formula Translation Examples")
+            formula_examples = st.text_area(
+                "Examples:", 
+                value=config.formula_prompt.examples,
+                height=300,
+                help="Concrete examples of correct formula translations. Use {target_language} placeholder.",
+                key="formula_examples"
+            )
+            
+            st.markdown("#### Formula Translation Instructions")
+            formula_instructions = st.text_area(
+                "Instructions:", 
+                value=config.formula_prompt.instructions,
+                height=200,
+                help="Step-by-step instructions for formula translation",
+                key="formula_instructions"
+            )
+            
+            st.markdown("#### Additional Notes for Formulas (Optional)")
+            formula_notes = st.text_area(
+                "Additional Notes:", 
+                value=config.formula_prompt.additional_notes,
+                height=100,
+                help="Any additional guidance for formula translation",
+                key="formula_notes"
+            )
+        
+        # Test Configuration
+        with st.expander("🧪 Test Configuration", expanded=False):
+            st.markdown("#### Test Your Configuration")
+            test_text = st.text_input(
+                "Test English Text:", 
+                value="The operating results and statement of financial position of the company are fully set out in the attached financial statements.",
+                help="Enter text to test translation with current configuration"
+            )
+            
+            test_language = st.selectbox(
+                "Test Language:", 
+                ["Afrikaans", "French", "German", "Spanish", "Portuguese", "Dutch", "Italian"],
+                help="Select language for testing"
+            )
+            
+            if st.button("🧪 Test Configuration"):
+                if test_text:
+                    # Create temporary configuration for testing
+                    temp_config = PromptConfiguration(
+                        translation_prompt=TranslationPrompt(
+                            identity=translation_identity,
+                            instructions=translation_instructions,
+                            examples=translation_examples,
+                            critical_rules=translation_rules,
+                            additional_notes=translation_notes
+                        ),
+                        formula_prompt=FormulaPrompt(
+                            identity=formula_identity,
+                            critical_rules=formula_rules,
+                            examples=formula_examples,
+                            instructions=formula_instructions,
+                            additional_notes=formula_notes
+                        ),
+                        name=new_name,
+                        description=new_description
+                    )
+                    
+                    # Test with temporary configuration
+                    temp_translator = ConfigurableTranslator()
+                    temp_translator.current_config = temp_config
+                    
+                    test_results = temp_translator.test_translation(test_text, test_language)
+                    
+                    if test_results["success"]:
+                        st.success("✅ Test completed successfully!")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**Original:**")
+                            st.markdown(f'<div style="background-color: #f0f0f0; padding: 10px; border-radius: 5px;">{test_results["original_value"]}</div>', unsafe_allow_html=True)
+                            
+                            st.markdown("**Original Formula:**")
+                            st.markdown(f'<div style="background-color: #f0f0f0; padding: 10px; border-radius: 5px; font-family: monospace;">{test_results["original_formula"]}</div>', unsafe_allow_html=True)
+                        
+                        with col2:
+                            st.markdown(f"**{test_language} Translation:**")
+                            st.markdown(f'<div style="background-color: #e8f5e8; padding: 10px; border-radius: 5px;">{test_results["translated_value"]}</div>', unsafe_allow_html=True)
+                            
+                            st.markdown(f"**{test_language} Formula:**")
+                            st.markdown(f'<div style="background-color: #e8f5e8; padding: 10px; border-radius: 5px; font-family: monospace;">{test_results["translated_formula"]}</div>', unsafe_allow_html=True)
+                    else:
+                        st.error(f"❌ Test failed: {test_results['error']}")
+                else:
+                    st.warning("Please enter test text")
+        
+        # Save configuration
+        st.markdown("### 💾 Save Configuration")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("💾 Save Configuration", type="primary"):
+                # Create new configuration object
+                new_config = PromptConfiguration(
+                    translation_prompt=TranslationPrompt(
+                        identity=translation_identity,
+                        instructions=translation_instructions,
+                        examples=translation_examples,
+                        critical_rules=translation_rules,
+                        additional_notes=translation_notes
+                    ),
+                    formula_prompt=FormulaPrompt(
+                        identity=formula_identity,
+                        critical_rules=formula_rules,
+                        examples=formula_examples,
+                        instructions=formula_instructions,
+                        additional_notes=formula_notes
+                    ),
+                    name=new_name,
+                    description=new_description,
+                    created_at=config.created_at,
+                    modified_at=datetime.now().isoformat()
+                )
+                
+                if translator.config_manager.save_configuration(new_config):
+                    st.success("✅ Configuration saved successfully!")
+                    st.info("The new configuration will be used for all future translations.")
+                    # Update session state
+                    translator.session_state.prompt_config = new_config
+                else:
+                    st.error("❌ Failed to save configuration")
+        
+        with col2:
+            if st.button("🔄 Reset to Default"):
+                default_config = translator.config_manager.get_default_configuration()
+                if translator.config_manager.save_configuration(default_config):
+                    st.success("✅ Reset to default configuration!")
+                    st.rerun()
+                else:
+                    st.error("❌ Failed to reset configuration")
+        
+        with col3:
+            if st.button("↩️ Reload Configuration"):
+                config = translator.config_manager.load_configuration()
+                st.success("✅ Configuration reloaded!")
+                st.rerun()
 
 if __name__ == "__main__":
     main() 
