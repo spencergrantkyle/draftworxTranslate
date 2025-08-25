@@ -3,11 +3,12 @@ from openai import OpenAI
 client = OpenAI()
 
 def translate_english_value(english_value, target_language):
+# Replace "role": "developer" with "role": "system"
     response = client.responses.create(
         model="gpt-4.1",
         input=[
             {
-                "role": "developer",
+                "role": "system",
                 "content": f"""
 # Identity
 You are a professional translator specializing in IFRS-compliant financial disclosures.
@@ -36,7 +37,7 @@ def translate_formula(english_value, translated_value, english_formula, target_l
         model="gpt-4.1",
         input=[
             {
-                "role": "developer",
+                "role": "system",
                 "content": f"""
 # Identity
 You are an expert Excel formula translator focused on localizing financial statement text without breaking Excel logic.
